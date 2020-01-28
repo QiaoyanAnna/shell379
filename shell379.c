@@ -72,9 +72,14 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
     return arg;   
 }
 
-void jobs() {
+void endExecution() {
+    printf("exit\n");
+}
+
+void displayStatus() {
     printf("jobs\n");
 }
+
 
 
 int main(int argc, char *argv[]) {
@@ -83,12 +88,13 @@ int main(int argc, char *argv[]) {
         char line[LINE_LENGTH+2]; // one space for new line, one space for \0
         char cmd[MAX_ARGS][MAX_LENGTH];
         int numOfArg = 0;
+        int ret;
 
         fflush(stdin);
         printf("SHELL379: ");
         fgets(line, sizeof line, stdin);
 
-        int ret = validateCmd(line, cmd);
+        ret = validateCmd(line, cmd);
         if (ret == -1) {
             continue;
         } else {
@@ -106,7 +112,17 @@ int main(int argc, char *argv[]) {
                 printf("Invalid Command: jobs does not take any argument.\n");
                 continue;
             } else {
-                jobs();
+                displayStatus();
+            }
+        }
+        // command exit is entered
+        if (strcmp(cmd[0],"exit") == 0) {
+            if (numOfArg != 1) {
+                printf("Invalid Command: exit does not take any argument.\n");
+                continue;
+            } else {
+                endExecution();
+                break;
             }
         }
 
