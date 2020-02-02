@@ -1,17 +1,20 @@
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <ctype.h>
 #include <math.h> 
+#include <stdint.h>
 
 #define LINE_LENGTH 100
 #define MAX_ARGS 7
 #define MAX_LENGTH 20
 #define MAX_PT_ENTRIES 32
+
+int status;
 
 struct process 
 {
@@ -108,36 +111,70 @@ void displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     printf("Sys  time =\t0 seconds\n");
 }
 
-void killProc(int pid) {
-    printf("kill: %d\n", pid);
+int killProc(int pid, int numOfProc, char cmd[MAX_ARGS][MAX_LENGTH], struct process proc[MAX_PT_ENTRIES]) {
+    int ret;
+    ret = kill(pid, SIGKILL);
+
+    int killInd = 0;
+    if (ret == 0) {
+        // find the index of the killed process
+        for (int i = 0; i < numOfProc; i++) {
+            if (proc[i].pid == pid) {
+                killInd = i;
+                break;
+            }
+        }
+
+        for (int j = killInd; j < numOfProc; j++) {
+            proc[j].pid = proc[j+1].pid;
+            proc[j].s = proc[j+1].s;
+            proc[j].sec = proc[j+1].sec;
+            strcpy(proc[j].command, proc[j+1].command);
+        }
+
+    } else {
+        printf("An error occured while killing the process %d\n", pid);
+    }
+    return ret;
 }
 
-void resumeProc(int pid) {
-    printf("resume: %d\n", pid);
-}
+int resumeSuspend(int pid, int numOfProc, char cmd[MAX_ARGS][MAX_LENGTH], struct process proc[MAX_PT_ENTRIES]) {
+    int ret;
+    if (strcmp(cmd[0],"resume") == 0) {
+        ret = kill(pid, SIGCONT);
+        if (ret == 0) {
+            for (int i = 0; i < numOfProc; i++) {
+                if (proc[i].pid == pid) {
+                    proc[i].s = 'R';
+                    break;
+                }
+            }
+        }   
+    } else {
+        ret = kill(pid, SIGSTOP);
+        if (ret == 0) {
+            for (int i = 0; i < numOfProc; i++) {
+                if (proc[i].pid == pid) {
+                    proc[i].s = 'S';
+                    break;
+                }
+            }
+        }
+    }
 
-void procSleep(int numOfSec) {
-    printf("sleep for %d seconds.\n", numOfSec);
-}
-
-void suspendProc(int pid) {
-    printf("suspend: %d\n", pid);
-}
-
-void waitForProc(int pid) {
-    printf("wait: %d\n", pid);
+    return ret;
 }
 
 int main(int argc, char *argv[]) {
-    bool exit = false;
+    bool isExit = false;
     int numOfProc = 0;
-    while (!exit) {
+    while (!isExit) {
         char line[LINE_LENGTH+2]; // one space for new line, one space for \0
         char cmd[MAX_ARGS][MAX_LENGTH];
         struct process proc[MAX_PT_ENTRIES];
         int numOfArg = 0;
         int ret;
-
+        
         fflush(stdin);
         printf("SHELL379: ");
         fgets(line, sizeof line, stdin);
@@ -182,18 +219,37 @@ int main(int argc, char *argv[]) {
 
             // check if valid
             if (cmdInt == 0 && cmd[1][0] != '0') {
-                printf("Invalid Command: the argument should be a integer.\n");
+                printf("Invalid Command: the argument should be an integer.\n");
                 continue;
             } else if (numOfDigits != lenOfCmd) {
-                printf("Invalid Command: the argument should be a integer.\n");
+                printf("Invalid Command: the argument should be an integer.\n");
                 continue;
             } 
 
-            if (strcmp(cmd[0],"kill") == 0) {killProc(cmdInt);}
-            else if (strcmp(cmd[0],"resume") == 0) {resumeProc(cmdInt);}
-            else if (strcmp(cmd[0],"sleep") == 0) {procSleep(cmdInt);}
-            else if (strcmp(cmd[0],"suspend") == 0) {suspendProc(cmdInt);}
-            else if (strcmp(cmd[0],"wait") == 0) {waitForProc(cmdInt);}
+            if (strcmp(cmd[0],"sleep") == 0) {
+                sleep(cmdInt);
+                continue;
+            } else if (strcmp(cmd[0],"wait") == 0) {
+                ret = waitpid(cmdInt, NULL, 0);
+                if (ret == -1) {
+                    printf("An error occured while waiting the process %d\n", cmdInt);
+                    continue;
+                }
+            } else if (strcmp(cmd[0],"kill") == 0) {
+                ret = killProc(cmdInt, numOfProc, cmd, proc);
+                if (ret == 0) {
+                    numOfArg--;
+                } else {
+                    continue;
+                }
+            } else {
+                ret = resumeSuspend(cmdInt, numOfProc, cmd, proc);
+                if (ret != 0) {
+                    printf("An error occured while %sing the process %d\n", cmd[0], cmdInt);
+                    continue;
+                }
+            }
+            
         }
         // other command
         else {
@@ -202,26 +258,29 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "fork failed\n");
                 _exit(1);
             } else if (rc == 0) { // child (new process)
-                printf("Child pid: %d\n", (int) getpid());
+                // printf("Child pid: %d\n", (int) getpid());
                 char *tmp[numOfArg + 1];
                 for (int j = 0; j < numOfArg; j++){
                     *(tmp+j) = cmd[j];
                 }
                 *(tmp + numOfArg) = NULL;
-                if(execvp(tmp[0], tmp) < 0)
+                if(execvp(tmp[0], tmp) < 0) {
                     perror( "Exec problem:" );
+                }
+                // _exit(0);
             } else { // parent goes down this path (original process)
-                printf("Parent pid: %d\n", (int) getpid());
+                // printf("Parent pid: %d\n", (int) getpid());
                 if (strcmp(cmd[numOfArg-1],"&") == 0) {
-                    printf("Child pid: %d\n", rc);
-                    printf("numOfProc: %d\n", numOfProc);
+                    // printf("Child pid: %d\n", rc);
                     numOfProc++;
                     proc[numOfProc-1].pid = rc;
                     proc[numOfProc-1].s = 'R';
                     proc[numOfProc-1].sec = 0;
                     strcpy(proc[numOfProc-1].command, line);
-                }
-                //printf("numOfProc: %d\n", numOfProc);
+                    continue;
+                } 
+                waitpid(rc, NULL, 0);
+                printf("parent finish \n");                
             }
         }
     }
