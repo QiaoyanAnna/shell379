@@ -14,8 +14,6 @@
 #define MAX_LENGTH 20
 #define MAX_PT_ENTRIES 32
 
-int status;
-
 struct process 
 {
     int pid;
@@ -29,19 +27,8 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
     int lineLen = strlen(line);
     // find the position of &
     char *p;
-    int idx;
     p = strchr(line, '&');
-    idx = (int)(p - line);
-    // check if & is the last argument
-    if (p != NULL) {
-        if (lineLen-2 != idx) {
-            printf("Invalid Command: & must be the last argument.\n");
-            return -1;
-        } else if (line[lineLen-3] != ' ') {
-            printf("Invalid Command: & must be the last argument.\n");
-            return -1;
-        }
-    }
+
     // check if the input line ends with a newline to see 
     // if it exceeds the maximum number of characters
     if (line[lineLen-1] != '\n') {
@@ -84,6 +71,15 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
             }
         }
     }
+
+    // check if & is the last argument
+    if (p != NULL) {
+        if (strcmp(cmd[arg-1], "&") != 0) {
+            printf("Invalid Command: & must be the last argument.\n");
+            return -1;
+        } 
+    }
+
     memset(line, '\0', lineLen);
     strcpy(line, cmd[0]);
     for (int j = 1; j < arg; j++) {
@@ -238,7 +234,7 @@ int main(int argc, char *argv[]) {
             } else if (strcmp(cmd[0],"kill") == 0) {
                 ret = killProc(cmdInt, numOfProc, cmd, proc);
                 if (ret == 0) {
-                    numOfArg--;
+                    numOfProc--;
                 } else {
                     continue;
                 }
@@ -267,7 +263,7 @@ int main(int argc, char *argv[]) {
                 if(execvp(tmp[0], tmp) < 0) {
                     perror( "Exec problem:" );
                 }
-                // _exit(0);
+                _exit(0);
             } else { // parent goes down this path (original process)
                 // printf("Parent pid: %d\n", (int) getpid());
                 if (strcmp(cmd[numOfArg-1],"&") == 0) {
@@ -277,10 +273,9 @@ int main(int argc, char *argv[]) {
                     proc[numOfProc-1].s = 'R';
                     proc[numOfProc-1].sec = 0;
                     strcpy(proc[numOfProc-1].command, line);
-                    continue;
-                } 
-                waitpid(rc, NULL, 0);
-                printf("parent finish \n");                
+                } else {
+                    waitpid(rc, NULL, 0);
+                }               
             }
         }
     }
