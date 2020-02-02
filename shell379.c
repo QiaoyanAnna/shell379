@@ -89,25 +89,54 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
     return arg;   
 }
 
-void endExecution() {
-    printf("exit\n");
+bool endExecution(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
+    int ret;
+    bool ifAllKilled = true;
+    for (int i = 0; i < numOfProc; i++) {
+        ret = kill(proc[i].pid, SIGKILL);
+        if (ret != 0) {
+            printf("An error occured while killing the process %d\n", proc[i].pid);
+            ifAllKilled = false;
+        }
+    }
+    return ifAllKilled;
 }
 
-void displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
+int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
+
+    int ret;
+
     printf("Running processes:\n");
     if (numOfProc > 0) {
-        printf("#\tPID\tS\tSEC\tCOMMAND\n");
+
         for (int i = 0; i < numOfProc; i++) {
-            printf("%d:\t%d\t%c\t%d\t%s\n", i, proc[i].pid, proc[i].s, proc[i].sec, proc[i].command);
+            ret = waitpid(proc[i].pid, NULL, WNOHANG);
+            if (ret == proc[i].pid) {
+                // the process finished
+                for (int j = i; j < numOfProc; j++) {
+                    proc[j].pid = proc[j+1].pid;
+                    proc[j].s = proc[j+1].s;
+                    proc[j].sec = proc[j+1].sec;
+                    strcpy(proc[j].command, proc[j+1].command);
+                }
+                numOfProc--;
+                i--;
+            } else if (i == 0) {
+                printf("#\tPID\tS\tSEC\tCOMMAND\n");
+                printf("%d:\t%d\t%c\t%d\t%s\n", i, proc[i].pid, proc[i].s, proc[i].sec, proc[i].command);
+            } else {
+                printf("%d:\t%d\t%c\t%d\t%s\n", i, proc[i].pid, proc[i].s, proc[i].sec, proc[i].command);
+            }
         }
     }
     printf("Processes =\t%d active\n", numOfProc);
     printf("Completed processes:\n");
     printf("User time =\t0 seconds\n");
     printf("Sys  time =\t0 seconds\n");
+    return numOfProc;
 }
 
-int killProc(int pid, int numOfProc, char cmd[MAX_ARGS][MAX_LENGTH], struct process proc[MAX_PT_ENTRIES]) {
+int killProc(int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int ret;
     ret = kill(pid, SIGKILL);
 
@@ -195,10 +224,15 @@ int main(int argc, char *argv[]) {
                 continue;
             }
             if (strcmp(cmd[0],"exit") == 0) {
-                endExecution();
-                break;
+                bool ifAllKilled;
+                ifAllKilled = endExecution(numOfProc, proc);
+                if (ifAllKilled) {
+                    break;
+                } else {
+                    continue;
+                }
             } else if (strcmp(cmd[0],"jobs") == 0) {
-                displayStatus(numOfProc, proc);
+                numOfProc = displayStatus(numOfProc, proc);
             }
         }
         // command kill, reusme, sleep, suspend or wait is entered
@@ -232,7 +266,7 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
             } else if (strcmp(cmd[0],"kill") == 0) {
-                ret = killProc(cmdInt, numOfProc, cmd, proc);
+                ret = killProc(cmdInt, numOfProc, proc);
                 if (ret == 0) {
                     numOfProc--;
                 } else {
