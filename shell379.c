@@ -1,5 +1,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/time.h>
+#include <sys/times.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +21,6 @@ struct process
 {
     int pid;
     char s;
-    int sec;
     char command[100];
 };
 
@@ -89,6 +91,45 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
     return arg;   
 }
 
+int calTime(int pid) {
+    char pidChar[6]; 
+    char path[20];
+    
+    sprintf(pidChar, "%d", pid); 
+    strcpy(path, "/proc/");
+    strcat(path, pidChar);
+    strcat(path, "/stat");
+    // printf("path: %s\n", path);
+
+    char content[800];
+    FILE *fptr;
+    if ((fptr = fopen(path, "r")) == NULL) {
+        return -1;
+    }
+    // reads text until newline is encountered
+    fscanf(fptr, "%[^\n]", content);
+    int i = 0;
+    char *element = strtok(content, " ");
+    char *arr[60];
+
+    while (element != NULL)
+    {
+        arr[i++] = element;
+        element = strtok (NULL, " ");
+    }
+
+    int utime = atoi(arr[13]);
+    int stime = atoi(arr[14]);
+    int cutime = atoi(arr[15]);
+    int cstime =atoi(arr[16]);
+    // printf("utime: %d, stime: %d, cutime: %d, cstime: %d\n", utime, stime, cutime, cstime);
+    int totalTime = (utime + stime + cutime + cstime) / sysconf(_SC_CLK_TCK);
+    // printf("total Time: %d\n", totalTime);
+    fclose(fptr);
+
+    return totalTime;
+}
+
 bool endExecution(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int ret;
     bool ifAllKilled = true;
@@ -105,7 +146,7 @@ bool endExecution(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
 int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
 
     int ret;
-
+    int sec = 0;
     printf("Running processes:\n");
     if (numOfProc > 0) {
 
@@ -116,23 +157,32 @@ int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
                 for (int j = i; j < numOfProc; j++) {
                     proc[j].pid = proc[j+1].pid;
                     proc[j].s = proc[j+1].s;
-                    proc[j].sec = proc[j+1].sec;
                     strcpy(proc[j].command, proc[j+1].command);
                 }
                 numOfProc--;
                 i--;
             } else if (i == 0) {
+                ret = calTime(proc[i].pid);
+                if (ret != -1) {
+                    sec = ret;
+                }
                 printf("#\tPID\tS\tSEC\tCOMMAND\n");
-                printf("%d:\t%d\t%c\t%d\t%s\n", i, proc[i].pid, proc[i].s, proc[i].sec, proc[i].command);
+                printf("%d:\t%d\t%c\t%d\t%s\n", i, proc[i].pid, proc[i].s, sec, proc[i].command);
             } else {
-                printf("%d:\t%d\t%c\t%d\t%s\n", i, proc[i].pid, proc[i].s, proc[i].sec, proc[i].command);
+                ret = calTime(proc[i].pid);
+                if (ret != -1) {
+                    sec = ret;
+                }
+                printf("%d:\t%d\t%c\t%d\t%s\n", i, proc[i].pid, proc[i].s, sec, proc[i].command);
             }
         }
     }
+    struct rusage ru;
+    getrusage(RUSAGE_CHILDREN, &ru);
     printf("Processes =\t%d active\n", numOfProc);
     printf("Completed processes:\n");
-    printf("User time =\t0 seconds\n");
-    printf("Sys  time =\t0 seconds\n");
+    printf("User time =\t%ld seconds\n", ru.ru_utime.tv_sec);
+    printf("Sys  time =\t%ld seconds\n", ru.ru_stime.tv_sec);
     return numOfProc;
 }
 
@@ -153,7 +203,6 @@ int killProc(int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
         for (int j = killInd; j < numOfProc; j++) {
             proc[j].pid = proc[j+1].pid;
             proc[j].s = proc[j+1].s;
-            proc[j].sec = proc[j+1].sec;
             strcpy(proc[j].command, proc[j+1].command);
         }
 
@@ -231,7 +280,7 @@ int main(int argc, char *argv[]) {
                 } else {
                     continue;
                 }
-            } else if (strcmp(cmd[0],"jobs") == 0) {
+            } else {
                 numOfProc = displayStatus(numOfProc, proc);
             }
         }
@@ -263,8 +312,8 @@ int main(int argc, char *argv[]) {
                 ret = waitpid(cmdInt, NULL, 0);
                 if (ret == -1) {
                     printf("An error occured while waiting the process %d\n", cmdInt);
-                    continue;
                 }
+                continue;
             } else if (strcmp(cmd[0],"kill") == 0) {
                 ret = killProc(cmdInt, numOfProc, proc);
                 if (ret == 0) {
@@ -305,7 +354,6 @@ int main(int argc, char *argv[]) {
                     numOfProc++;
                     proc[numOfProc-1].pid = rc;
                     proc[numOfProc-1].s = 'R';
-                    proc[numOfProc-1].sec = 0;
                     strcpy(proc[numOfProc-1].command, line);
                 } else {
                     waitpid(rc, NULL, 0);
