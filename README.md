@@ -1,5 +1,3 @@
-# shell379
-
 ## Reference
 
 *w3resource* Available: https://www.w3resource.com/c-programming-exercises/string/c-string-exercise-31.php. [Accessed: 28-Jan-2020].
@@ -11,4 +9,3 @@
 *programiz* Available: https://www.programiz.com/c-programming/examples/read-file. [Accessed: 2-Reb-2020].
 
 *stackoverflow* Available: https://stackoverflow.com/questions/15472299/split-string-into-tokens-and-save-them-in-an-array. [Accessed: 2-Feb-2020].
-
