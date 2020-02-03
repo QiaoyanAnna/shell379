@@ -24,6 +24,9 @@ struct process
     char command[100];
 };
 
+// validate command
+// split the whole line into separate command and argument 
+// and store in a 2D array cmd[MAX_ARGS][MAX_LENGTH]
 int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
     int i = 0, ch = 0, arg = 0;
     int lineLen = strlen(line);
@@ -43,8 +46,9 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
         idxOfFirstChar++;
     }
 
+    // start with the first character and loop until the end of the line
     for(i = idxOfFirstChar; i < lineLen; i++) {
-        if (line[i] == ' ') {
+        if (line[i] == ' ') { // get rid of the space
             cmd[arg][ch]='\0';
             arg++;
             if (arg > MAX_ARGS) {
@@ -55,7 +59,7 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
             while (line[i+1] == ' ') {
                 i++;
             }
-        } else if (line[i] == '\n') {
+        } else if (line[i] == '\n') { 
             cmd[arg][ch]='\0';
             if (line[i-1] != ' '){
                 arg++;
@@ -82,6 +86,7 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
         } 
     }
 
+    // fix line into normal command by adding one space between each argument
     memset(line, '\0', lineLen);
     strcpy(line, cmd[0]);
     for (int j = 1; j < arg; j++) {
@@ -91,22 +96,23 @@ int validateCmd(char line[LINE_LENGTH+2], char cmd[MAX_ARGS][MAX_LENGTH]) {
     return arg;   
 }
 
+// calculate the CPU time for the progress given pid
 int calTime(int pid) {
     char pidChar[6]; 
     char path[20];
     
+    // path
     sprintf(pidChar, "%d", pid); 
     strcpy(path, "/proc/");
     strcat(path, pidChar);
     strcat(path, "/stat");
-    // printf("path: %s\n", path);
 
     char content[800];
     FILE *fptr;
     if ((fptr = fopen(path, "r")) == NULL) {
         return -1;
     }
-    // reads text until newline is encountered
+    // reads text until the newline
     fscanf(fptr, "%[^\n]", content);
     int i = 0;
     char *element = strtok(content, " ");
@@ -122,14 +128,14 @@ int calTime(int pid) {
     int stime = atoi(arr[14]);
     int cutime = atoi(arr[15]);
     int cstime =atoi(arr[16]);
-    // printf("utime: %d, stime: %d, cutime: %d, cstime: %d\n", utime, stime, cutime, cstime);
     int totalTime = (utime + stime + cutime + cstime) / sysconf(_SC_CLK_TCK);
-    // printf("total Time: %d\n", totalTime);
+    
     fclose(fptr);
 
     return totalTime;
 }
 
+// delete the progress given pid in the process array
 void sortProc (int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int killInd = 0;
 
@@ -147,6 +153,7 @@ void sortProc (int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     }
 }
 
+// end the execution when exit is enter by the user
 bool endExecution(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int ret;
     bool ifAllKilled = true;
@@ -163,6 +170,7 @@ bool endExecution(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     return ifAllKilled;
 }
 
+// display the status when user entered command jobs
 int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
 
     int ret;
@@ -180,7 +188,7 @@ int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
                 }
                 numOfProc--;
                 i--;
-            } else if (i == 0) {
+            } else if (i == 0) { // the first progress
                 ret = calTime(proc[i].pid);
                 if (ret != -1) {
                     sec = ret;
@@ -196,6 +204,7 @@ int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
             }
         }
     }
+    // get the user time and the system time 
     struct rusage ru;
     getrusage(RUSAGE_CHILDREN, &ru);
     printf("Processes =\t%d active\n", numOfProc);
@@ -205,6 +214,7 @@ int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     return numOfProc;
 }
 
+// kill the process given pid
 int killProc(int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int ret;
     ret = kill(pid, SIGKILL);
@@ -216,14 +226,17 @@ int killProc(int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     return ret;
 }
 
+// resume of suspend the progress given pid
 int resumeSuspend(int pid, int numOfProc, char cmd[MAX_ARGS][MAX_LENGTH], struct process proc[MAX_PT_ENTRIES]) {
-    int ret;
+    int ret; 
+    // check if the progress has already finished
     ret = waitpid(pid, NULL, WNOHANG);
     if (ret == pid){
         sortProc(pid, numOfProc, proc);
         return ret;
     }
 
+    // change the status to R(running) when the command is resume
     if (strcmp(cmd[0],"resume") == 0) {
         ret = kill(pid, SIGCONT);
         if (ret == 0) {
@@ -234,7 +247,7 @@ int resumeSuspend(int pid, int numOfProc, char cmd[MAX_ARGS][MAX_LENGTH], struct
                 }
             }
         } 
-    } else {
+    } else { // change the status to S(suspend) when the command is suspend
         ret = kill(pid, SIGSTOP);
         if (ret == 0) {
             for (int i = 0; i < numOfProc; i++) {
@@ -259,6 +272,7 @@ int main(int argc, char *argv[]) {
         int numOfArg = 0;
         int ret;
         
+        // get the command
         fflush(stdin);
         printf("SHELL379: ");
         fgets(line, sizeof line, stdin);
@@ -269,12 +283,6 @@ int main(int argc, char *argv[]) {
         } else {
             numOfArg = ret;
         }
-
-        // printf("numOfArg: %d\n", numOfArg);
-        // for (int i = 0; i < numOfArg; i++) {
-        //     printf("arg %d: %s\n", i+1, cmd[i]);
-        // }
-        // printf("line: %s\n", line);
 
         // command exit or jobs is entered 
         if (strcmp(cmd[0],"exit") == 0 || strcmp(cmd[0],"jobs") == 0) {
@@ -353,7 +361,6 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "fork failed\n");
                 _exit(1);
             } else if (rc == 0) { // child (new process)
-                // printf("Child pid: %d\n", (int) getpid());
                 char *tmp[numOfArg + 1];
                 for (int j = 0; j < numOfArg; j++){
                     *(tmp+j) = cmd[j];
@@ -364,9 +371,7 @@ int main(int argc, char *argv[]) {
                 }
                 _exit(0);
             } else { // parent goes down this path (original process)
-                // printf("Parent pid: %d\n", (int) getpid());
                 if (strcmp(cmd[numOfArg-1],"&") == 0) {
-                    // printf("Child pid: %d\n", rc);
                     numOfProc++;
                     proc[numOfProc-1].pid = rc;
                     proc[numOfProc-1].s = 'R';
