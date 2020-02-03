@@ -130,14 +130,34 @@ int calTime(int pid) {
     return totalTime;
 }
 
+void sortProc (int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
+    int killInd = 0;
+
+    for (int i = 0; i < numOfProc; i++) {
+        if (proc[i].pid == pid) {
+            killInd = i;
+            break;
+        }
+    }
+
+    for (int j = killInd; j < numOfProc; j++) {
+        proc[j].pid = proc[j+1].pid;
+        proc[j].s = proc[j+1].s;
+        strcpy(proc[j].command, proc[j+1].command);
+    }
+}
+
 bool endExecution(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int ret;
     bool ifAllKilled = true;
     for (int i = 0; i < numOfProc; i++) {
-        ret = kill(proc[i].pid, SIGKILL);
-        if (ret != 0) {
-            printf("An error occured while killing the process %d\n", proc[i].pid);
-            ifAllKilled = false;
+        ret = waitpid(proc[i].pid, NULL, WNOHANG);
+        if (ret == 0) {
+            ret = kill(proc[i].pid, SIGKILL);
+            if (ret != 0) {
+                printf("An error occured while killing the process %d\n", proc[i].pid);
+                ifAllKilled = false;
+            }
         }
     }
     return ifAllKilled;
@@ -149,7 +169,6 @@ int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int sec = 0;
     printf("Running processes:\n");
     if (numOfProc > 0) {
-
         for (int i = 0; i < numOfProc; i++) {
             ret = waitpid(proc[i].pid, NULL, WNOHANG);
             if (ret == proc[i].pid) {
@@ -189,23 +208,8 @@ int displayStatus(int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
 int killProc(int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
     int ret;
     ret = kill(pid, SIGKILL);
-
-    int killInd = 0;
     if (ret == 0) {
-        // find the index of the killed process
-        for (int i = 0; i < numOfProc; i++) {
-            if (proc[i].pid == pid) {
-                killInd = i;
-                break;
-            }
-        }
-
-        for (int j = killInd; j < numOfProc; j++) {
-            proc[j].pid = proc[j+1].pid;
-            proc[j].s = proc[j+1].s;
-            strcpy(proc[j].command, proc[j+1].command);
-        }
-
+        sortProc(pid, numOfProc, proc);
     } else {
         printf("An error occured while killing the process %d\n", pid);
     }
@@ -214,6 +218,12 @@ int killProc(int pid, int numOfProc, struct process proc[MAX_PT_ENTRIES]) {
 
 int resumeSuspend(int pid, int numOfProc, char cmd[MAX_ARGS][MAX_LENGTH], struct process proc[MAX_PT_ENTRIES]) {
     int ret;
+    ret = waitpid(pid, NULL, WNOHANG);
+    if (ret == pid){
+        sortProc(pid, numOfProc, proc);
+        return ret;
+    }
+
     if (strcmp(cmd[0],"resume") == 0) {
         ret = kill(pid, SIGCONT);
         if (ret == 0) {
@@ -223,7 +233,7 @@ int resumeSuspend(int pid, int numOfProc, char cmd[MAX_ARGS][MAX_LENGTH], struct
                     break;
                 }
             }
-        }   
+        } 
     } else {
         ret = kill(pid, SIGSTOP);
         if (ret == 0) {
@@ -312,8 +322,11 @@ int main(int argc, char *argv[]) {
                 ret = waitpid(cmdInt, NULL, 0);
                 if (ret == -1) {
                     printf("An error occured while waiting the process %d\n", cmdInt);
+                    continue;
+                } else {
+                    sortProc(cmdInt, numOfProc, proc);
+                    numOfProc--;
                 }
-                continue;
             } else if (strcmp(cmd[0],"kill") == 0) {
                 ret = killProc(cmdInt, numOfProc, proc);
                 if (ret == 0) {
@@ -323,7 +336,10 @@ int main(int argc, char *argv[]) {
                 }
             } else {
                 ret = resumeSuspend(cmdInt, numOfProc, cmd, proc);
-                if (ret != 0) {
+                if (ret == cmdInt) {
+                    printf("Process %d has already finished\n", cmdInt);
+                    numOfProc--;
+                } else if (ret != 0) {
                     printf("An error occured while %sing the process %d\n", cmd[0], cmdInt);
                     continue;
                 }
